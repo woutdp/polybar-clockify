@@ -3,6 +3,14 @@ name = "polybar-clockify"
 version = "0.1.0"
 description = "Quick access to control clockify through polybar"
 authors = ["Wout De Puysseleir <woutdp@gmail.com>"]
+license = "MIT"
+readme = "README.rst"
+homepage = "https://github.com/woutdp/polybar-clockify"
+repository = "https://github.com/woutdp/polybar-clockify"
+keywords = ["polybar", "clockify"]
+include = [
+    "LICENSE",
+]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -12,6 +20,9 @@ websockets = "^8.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
+
+[tool.poetry.scripts]
+polybar-clockify = "polybar_clockify.app:run"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

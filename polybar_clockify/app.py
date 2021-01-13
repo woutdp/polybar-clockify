@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from asyncio import sleep
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -11,8 +12,8 @@ from typing import Dict
 import isodate
 import websockets
 
-from polybar_clockify.api import get_auth_token, get_user, get_workspaces, get_projects, get_time_entries, \
-    patch_time_entry, post_time_entry
+from polybar_clockify.api import (get_auth_token, get_user, get_workspaces, get_projects, get_time_entries,
+                                  patch_time_entry, post_time_entry)
 from polybar_clockify.settings import EMAIL, UNIX_HOST, UNIX_PORT
 
 TIME_ENTRY_STARTED = 'TIME_ENTRY_STARTED'
@@ -110,14 +111,14 @@ class Clockify:
             await sleep(0.1)
 
             if self.hidden:
-                print('%{F#555}<hidden>%{F-}')
+                print_flush('%{F#555}<hidden>%{F-}')
                 continue
 
             if self.websocket_status == WebsocketStatus.CLOSED:
-                print('WEBSOCKET CONNECTION CLOSED')
+                print_flush('WEBSOCKET CONNECTION CLOSED')
                 continue
 
-            print(f'{self.money_earned} {self.currency} - {self.time_spent_working_today}')
+            print_flush(f'{self.money_earned} {self.currency} - {self.time_spent_working_today}')
 
     async def websocket_connect(self):
         token = get_auth_token().get('token')
@@ -142,24 +143,41 @@ class Clockify:
                     self.sync()
 
     async def unix_socket_connect(self):
-        while True:
-            client, _ = await loop.sock_accept(unix_socket_server)
+        s = socket(AF_INET, SOCK_STREAM)
+        s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 
-            message = (await loop.sock_recv(client, 255)).decode().rstrip()
+        try:
+            s.bind((UNIX_HOST, UNIX_PORT))
+        except OSError:
+            print_flush('Warning: Unix socket already in use - not binding')
+            return
+
+        s.listen()
+        s.setblocking(False)
+
+        loop = asyncio.get_event_loop()
+
+        while True:
+            client, _ = await loop.sock_accept(s)
+
+            message = await loop.sock_recv(client, 255)
+            message = message.decode().rstrip()
+
             if message == COMMAND_TOGGLE_TIMER:
                 await self.toggle_timer()
             elif message == COMMAND_TOGGLE_HIDE:
                 self.hidden = not self.hidden
             else:
+                print('Unknown command')
                 await loop.sock_sendall(client, b'Unknown command')
 
 
-if __name__ == '__main__':
-    unix_socket_server = socket(AF_INET, SOCK_STREAM)
-    unix_socket_server.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    unix_socket_server.bind((UNIX_HOST, UNIX_PORT))
-    unix_socket_server.listen()
-    unix_socket_server.setblocking(False)
+def print_flush(*args, **kwargs):
+    print(*args, **kwargs, flush=True)
+
+
+def run():
+    print_flush('Loading...')
 
     clockify = Clockify()
     loop = asyncio.get_event_loop()
@@ -167,3 +185,7 @@ if __name__ == '__main__':
     loop.create_task(clockify.unix_socket_connect())
     loop.run_until_complete(clockify.output())
     loop.run_forever()
+
+
+if __name__ == '__main__':
+    run()
