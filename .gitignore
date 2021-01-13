@@ -1,5 +1,4 @@
 .idea/
 __pycache__/
-*.db
 dist/
 credentials.json
