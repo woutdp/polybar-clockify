@@ -132,7 +132,7 @@ class Clockify:
                 try:
                     response = await websocket.recv()
                 except websockets.ConnectionClosed:
-                    self.websocket_status = False
+                    self.websocket_status = WebsocketStatus.CLOSED
                     break
 
                 if response == TIME_ENTRY_STARTED:
