@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from asyncio import sleep
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -38,9 +37,13 @@ class Clockify:
         self.workspace = get_workspaces()[0]
         self.projects = {project['id']: project for project in get_projects(self.workspace['id'])}
         self.today_time_entries = []
-        self.all_time_entries = get_time_entries(self.workspace['id'], self.user['id'])
         self.active_project = []
         self.sync()
+
+    def get_last_time_entry(self) -> Dict:
+        if self.today_time_entries:
+            return self.today_time_entries[0]
+        return get_time_entries(self.workspace['id'], self.user['id'])[0]
 
     def sync(self):
         self.today_time_entries = get_time_entries(
@@ -48,7 +51,7 @@ class Clockify:
             self.user['id'],
             {'start': datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')}
         )
-        self.active_project = self.projects[self.today_time_entries[0]['projectId']]
+        self.active_project = self.projects[self.get_last_time_entry()['projectId']]
 
     @property
     def hourly_rate(self):
@@ -75,7 +78,7 @@ class Clockify:
         difference = timedelta(0)
         if active:
             start = datetime.strptime(active[0]['timeInterval']['start'], '%Y-%m-%dT%H:%M:%S%z')
-            now = datetime.now(timezone.utc).replace(microsecond=0)
+            now = datetime.now(timezone.utc)
             difference = now - start
 
         # Calculates the finished time entries total, and adds the active entry to it
@@ -86,11 +89,6 @@ class Clockify:
                 in finished
             ), start=timedelta(0)
         )
-
-    def get_last_time_entry(self) -> Dict:
-        if self.today_time_entries:
-            return self.today_time_entries[0]
-        return get_time_entries(self.workspace['id'], self.user['id'])[0]
 
     async def toggle_timer(self):
         now = datetime.utcnow().replace(microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -114,11 +112,11 @@ class Clockify:
                 print_flush('%{F#555}<hidden>%{F-}')
                 continue
 
-            if self.websocket_status == WebsocketStatus.CLOSED:
-                print_flush('WEBSOCKET CONNECTION CLOSED')
-                continue
+            ws_closed = 'no-ws' if self.websocket_status == WebsocketStatus.CLOSED else ''
+            working_time = self.time_spent_working_today
+            working_time -= timedelta(microseconds=working_time.microseconds)
 
-            print_flush(f'{self.money_earned} {self.currency} - {self.time_spent_working_today}')
+            print_flush(f'{ws_closed}{self.money_earned} {self.currency} - {working_time}')
 
     async def websocket_connect(self):
         token = get_auth_token().get('token')
@@ -131,8 +129,10 @@ class Clockify:
             while True:
                 try:
                     response = await websocket.recv()
-                except websockets.ConnectionClosed:
+                except Exception:
                     self.websocket_status = WebsocketStatus.CLOSED
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(self.websocket_connect())  # Restart the connection
                     break
 
                 if response == TIME_ENTRY_STARTED:
