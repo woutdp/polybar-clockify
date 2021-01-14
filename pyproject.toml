@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "polybar-clockify"
-version = "0.1.1"
+version = "0.1.2"
 description = "Control Clockify through Polybar"
 authors = ["Wout De Puysseleir <woutdp@gmail.com>"]
 license = "MIT"
