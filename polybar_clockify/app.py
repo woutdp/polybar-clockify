@@ -112,7 +112,7 @@ class Clockify:
                 print_flush('%{F#555}<hidden>%{F-}')
                 continue
 
-            ws_closed = 'no-ws' if self.websocket_status == WebsocketStatus.CLOSED else ''
+            ws_closed = '(no connection) ' if self.websocket_status == WebsocketStatus.CLOSED else ''
             working_time = self.time_spent_working_today
             working_time -= timedelta(microseconds=working_time.microseconds)
 
@@ -142,6 +142,14 @@ class Clockify:
                 elif response == TIME_ENTRY_DELETED:
                     self.sync()
 
+    async def websocket_auto_reconnect(self):
+        while True:
+            await sleep(10)
+
+            if self.websocket_status == WebsocketStatus.CLOSED:
+                loop = asyncio.get_event_loop()
+                loop.create_task(self.websocket_connect())
+
     async def unix_socket_connect(self):
         s = socket(AF_INET, SOCK_STREAM)
         s.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -168,7 +176,7 @@ class Clockify:
             elif message == COMMAND_TOGGLE_HIDE:
                 self.hidden = not self.hidden
             else:
-                print('Unknown command')
+                print_flush('Unknown command')
                 await loop.sock_sendall(client, b'Unknown command')
 
 
@@ -182,6 +190,7 @@ def run():
     clockify = Clockify()
     loop = asyncio.get_event_loop()
     loop.create_task(clockify.websocket_connect())
+    loop.create_task(clockify.websocket_auto_reconnect())
     loop.create_task(clockify.unix_socket_connect())
     loop.run_until_complete(clockify.output())
     loop.run_forever()
