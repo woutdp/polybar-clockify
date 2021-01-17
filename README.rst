@@ -31,7 +31,7 @@ Installation
 Configuration
 _____________
 Create credentials file in ``~/.config/polybar/clockify/credentials.json`` and fill out your clockify credentials.
-Your will have to create a `clockify API key <https://clockify.me/user/settings/>`_ to make the module work. ::
+You will have to create a `clockify API key <https://clockify.me/user/settings/>`_ to make the module work. ::
 
     {
       "api-key": "your-api-key",
