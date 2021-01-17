@@ -4,7 +4,13 @@ polybar-clockify
 .. image:: https://badge.fury.io/py/polybar-clockify.svg
     :target: https://badge.fury.io/py/polybar-clockify
 
-Control Clockify through Polybar
+Control Clockify through Polybar.
+
+Features:
+
+- Displaying money earned and time worked
+- Toggle timer
+- Hide output for privacy
 
 
 Installation
@@ -39,6 +45,17 @@ Create a polybar module inside your polybar config add it to your active modules
 Development
 -----------
 This package uses `poetry <https://python-poetry.org/>`_
+
+To run in the terminal ::
+
+    # Execute in the root folder of the repository
+    poetry run python -u ./polybar_clockify/app.py
+
+    # Example for polybar config
+    [module/clockify]
+    type = custom/script
+    tail = true
+    exec = poetry run python -u /home/<your_user>/polybar-clockify/polybar_clockify/app.py
 
 
 Contribution
