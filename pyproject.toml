@@ -17,9 +17,12 @@ python = "^3.7"
 isodate = "^0.6.0"
 websockets = "^8.1"
 aiohttp = {extras = ["speedups"], version = "^3.7.3"}
+dataclasses-json = "^0.5.2"
+marshmallow = "^3.10.0"
+pytz = "^2020.5"
 
 [tool.poetry.dev-dependencies]
-pytest = "^5.2"
+pytest = "^6.2"
 
 [tool.poetry.scripts]
 polybar-clockify = "polybar_clockify.app:run"

@@ -1,22 +1,24 @@
 import asyncio
 from asyncio import sleep
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from random import choice
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from string import ascii_lowercase, digits
-from typing import Dict
+from typing import Optional, List, Dict
 
-import isodate
+import pytz
 import websockets
 from aiohttp import ClientSession
 
 from polybar_clockify.api import (get_user, get_workspaces, get_projects, get_time_entries, post_time_entry,
                                   patch_time_entry, get_auth_token)
+from polybar_clockify.objects import TimeEntry, Project, Workspace, User
 from polybar_clockify.settings import EMAIL, UNIX_HOST, UNIX_PORT
-from polybar_clockify.utils import deltatime_to_hours_minutes_seconds, print_flush
+from polybar_clockify.utils import deltatime_to_hours_minutes_seconds, print_flush, get_now, get_today, get_month, \
+    serialize_datetime, get_week
 
 TIME_ENTRY_STARTED = 'TIME_ENTRY_STARTED'
 TIME_ENTRY_STOPPED = 'TIME_ENTRY_STOPPED'
@@ -38,7 +40,8 @@ class WebsocketStatus(Enum):
 
 class Modes(Enum):
     OVERVIEW_TODAY = 1
-    OVERVIEW_MONTH = 2
+    OVERVIEW_WEEK = 2
+    OVERVIEW_MONTH = 3
 
     def next(self):
         next_ = self.value + 1
@@ -58,106 +61,107 @@ class Clockify:
         self.hidden = False
         self.mode = Modes.OVERVIEW_TODAY
         self.websocket_status = WebsocketStatus.UNINITIALIZED
-        self.user = None
-        self.workspace = None
-        self.projects = None
-        self.monthly_time_entries = []
-        self.active_project = []
+        self.user: Optional[User] = None
+        self.workspace: Optional[Workspace] = None
+        self.projects: Dict = {}
+        self.monthly_time_entries: List[TimeEntry] = []
+        self.active_project: Optional[Project] = None
 
     async def initialize(self):
         async with ClientSession() as session:
             self.user = await get_user(session)
             self.workspace = (await get_workspaces(session))[0]
-            self.projects = {project['id']: project for project in await get_projects(session, self.workspace['id'])}
+            self.projects = {project.id: project for project in await get_projects(session, self.workspace.id)}
             await self.sync()
 
     async def sync(self):
-        month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
-        workspace_id = self.workspace['id']
-        user_id = self.user['id']
-
         async with ClientSession() as session:
-            self.monthly_time_entries = await get_time_entries(session, workspace_id, user_id,
-                                                               {'start': month, 'page-size': 200})
-            self.active_project = self.projects[(await self.get_last_time_entry())['projectId']]
+            self.monthly_time_entries = await get_time_entries(
+                session,
+                self.workspace.id,
+                self.user.id,
+                {
+                    'start': serialize_datetime(get_month()),
+                    'page-size': 200
+                }
+            )
+            self.active_project = self.projects[(await self.get_last_time_entry()).project_id]
 
-    async def get_last_time_entry(self) -> Dict:
+    async def get_last_time_entry(self) -> TimeEntry:
         if self.monthly_time_entries:
             return self.monthly_time_entries[0]
 
         async with ClientSession() as session:
-            return (await get_time_entries(session, self.workspace['id'], self.user['id']))[0]
+            return (await get_time_entries(session, self.workspace.id, self.user.id))[0]
 
     @property
     def today_time_entries(self):
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
-        return [entry for entry in self.monthly_time_entries if entry['timeInterval']['start'] > today]
+        return [entry for entry in self.monthly_time_entries if entry.time_interval.start > get_today()]
+
+    @property
+    def weekly_time_entries(self):
+        return [entry for entry in self.monthly_time_entries if entry.time_interval.start > get_week()]
 
     @property
     def hourly_rate(self):
-        return Decimal(self.active_project['hourlyRate']['amount']) / 100
+        return Decimal(self.active_project.hourly_rate.amount) / 100
 
     @property
     def currency(self):
-        return self.active_project['hourlyRate']['currency']
+        return self.active_project.hourly_rate.currency
 
     @property
-    def money_earned(self):
+    def amount_earned(self):
         return Decimal(
             self.hourly_rate * Decimal(self.time_spent_working / timedelta(hours=1))
         ).quantize(Decimal('.01'))
 
     @property
     def time_spent_working(self):
-        # Splits the time entries into finished entries and an active entry
-        entries = self.today_time_entries if self.mode == Modes.OVERVIEW_TODAY else self.monthly_time_entries
+        if self.mode == Modes.OVERVIEW_TODAY:
+            time_entries = self.today_time_entries
+        elif self.mode == Modes.OVERVIEW_WEEK:
+            time_entries = self.weekly_time_entries
+        else:
+            time_entries = self.monthly_time_entries
 
         finished, active = [], []
-        for entry in entries:
-            (finished, active)[entry['timeInterval']['duration'] is None].append(entry)
+        for entry in time_entries:
+            (finished, active)[entry.time_interval.duration is None].append(entry)
 
-        # Calculates the active time entry duration
-        difference = timedelta(0)
+        finished_total = sum((entry.time_interval.duration for entry in finished), start=timedelta(0))
+        active_total = timedelta(0)
         if active:
-            start = datetime.strptime(active[0]['timeInterval']['start'], '%Y-%m-%dT%H:%M:%S%z')
-            now = datetime.now(timezone.utc)
-            difference = now - start
+            active_total = get_now(get_microseconds=True) - active[0].time_interval.start
 
-        # Calculates the finished time entries total, and adds the active entry to it
-        return difference + sum(
-            (
-                isodate.parse_duration(entry['timeInterval']['duration'])
-                for entry
-                in finished
-            ), start=timedelta(0)
-        )
+        return finished_total + active_total
 
     async def toggle_timer(self):
-        now = datetime.utcnow().replace(microsecond=0)
-        now_str = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+        now = datetime.now(pytz.utc).replace(microsecond=0)
+        now_str = serialize_datetime(now)
         last_entry = await self.get_last_time_entry()
 
         async with ClientSession() as session:
-            if last_entry['timeInterval']['duration'] is None:
+            if last_entry.time_interval.duration is None:
+                # We predict the time entry that will be set by clockify, this way we get instant feedback on clicking
                 time_entry = self.monthly_time_entries[0]
-                start = datetime.strptime(time_entry['timeInterval']['start'], '%Y-%m-%dT%H:%M:%S%z')
-                difference = now - start.replace(tzinfo=None)
-                time_entry['timeInterval']['end'] = now
-                time_entry['timeInterval']['duration'] = isodate.duration_isoformat(difference)
+                time_entry.time_interval.end = now
+                time_entry.time_interval.duration = now - time_entry.time_interval.start
 
-                await patch_time_entry(session, self.workspace['id'], self.user['id'], {'end': now_str})
+                await patch_time_entry(session, time_entry.workspace_id, time_entry.user_id, {'end': now_str})
             else:
+                # We predict the time entry that will be set by clockify, this way we get instant feedback on clicking
                 time_entry = deepcopy(last_entry)
-                time_entry['timeInterval']['start'] = now_str
-                time_entry['timeInterval']['end'] = None
-                time_entry['timeInterval']['duration'] = None
+                time_entry.time_interval.start = now
+                time_entry.time_interval.end = None
+                time_entry.time_interval.duration = None
                 self.monthly_time_entries.insert(0, time_entry)
 
-                await post_time_entry(session, self.workspace['id'], {
+                await post_time_entry(session, time_entry.workspace_id, {
                     'start': now_str,
-                    'billable': last_entry['billable'],
-                    'description': last_entry['description'],
-                    'projectId': last_entry['projectId'],
+                    'billable': last_entry.billable,
+                    'description': last_entry.description,
+                    'projectId': last_entry.project_id,
                 })
 
     async def websocket_connect(self):
@@ -228,7 +232,7 @@ class Clockify:
 
             ws_closed = '(no connection) ' if self.websocket_status == WebsocketStatus.CLOSED else ''
             working_time = deltatime_to_hours_minutes_seconds(self.time_spent_working)
-            print_flush(f'{ws_closed}{self.money_earned} {self.currency} - {working_time}')
+            print_flush(f'{ws_closed}{self.amount_earned} {self.currency} - {working_time}')
 
 
 def run():

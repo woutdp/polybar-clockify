@@ -1,3 +1,4 @@
+from polybar_clockify.objects import TimeEntry, User, Workspace, Project
 from polybar_clockify.settings import API_KEY, EMAIL, PASSWORD, BASE_URL, GLOBAL_BASE_URL
 
 HEADERS = {
@@ -31,20 +32,26 @@ async def get_auth_token(session):
 
 
 async def get_user(session):
-    return await get(session, f'{BASE_URL}/user', headers=HEADERS)
+    return User.schema().load(await get(session, f'{BASE_URL}/user', headers=HEADERS))
 
 
 async def get_workspaces(session):
-    return await get(session, f'{BASE_URL}/workspaces', headers=HEADERS)
+    return Workspace.schema().load(await get(session, f'{BASE_URL}/workspaces', headers=HEADERS), many=True)
 
 
 async def get_projects(session, workspace_id, params=None):
-    return await get(session, f'{BASE_URL}/workspaces/{workspace_id}/projects', params, headers=HEADERS)
+    return Project.schema().load(
+        await get(session, f'{BASE_URL}/workspaces/{workspace_id}/projects', params, headers=HEADERS),
+        many=True
+    )
 
 
 async def get_time_entries(session, workspace_id, user_id, params=None):
-    return await get(session, f'{BASE_URL}/workspaces/{workspace_id}/user/{user_id}/time-entries', params,
-                     headers=HEADERS)
+    return TimeEntry.schema().load(
+        await get(session, f'{BASE_URL}/workspaces/{workspace_id}/user/{user_id}/time-entries', params,
+                  headers=HEADERS),
+        many=True
+    )
 
 
 async def post_time_entry(session, workspace_id, json=None):

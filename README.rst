@@ -10,7 +10,7 @@ Features:
 
 - Displaying money earned and time worked
 - Toggle timer
-- Monthly and daily view
+- Daily, weekly and monthly view
 - Hide output for privacy
 
 

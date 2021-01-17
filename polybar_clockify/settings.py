@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 with open(f'{Path.home()}/.config/polybar/clockify/credentials.json') as credentials:
@@ -12,3 +13,5 @@ GLOBAL_BASE_URL = 'https://global.api.clockify.me'
 
 UNIX_HOST = '127.0.0.1'
 UNIX_PORT = 30300
+
+LOCAL_TIMEZONE = datetime.now().astimezone().tzinfo
