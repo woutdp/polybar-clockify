@@ -10,6 +10,7 @@ Features:
 
 - Displaying money earned and time worked
 - Toggle timer
+- Monthly and daily view
 - Hide output for privacy
 
 
@@ -40,6 +41,8 @@ Create a polybar module inside your polybar config add it to your active modules
     exec = polybar-clockify
     click-left = echo 'TOGGLE_TIMER' | nc 127.0.0.1 30300
     click-right = echo 'TOGGLE_HIDE' | nc 127.0.0.1 30300
+    scroll-up = echo 'NEXT_MODE' | nc 127.0.0.1 30300
+    scroll-down = echo 'PREVIOUS_MODE' | nc 127.0.0.1 30300
 
 
 Development

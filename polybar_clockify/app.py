@@ -16,6 +16,7 @@ from aiohttp import ClientSession
 from polybar_clockify.api import (get_user, get_workspaces, get_projects, get_time_entries, post_time_entry,
                                   patch_time_entry, get_auth_token)
 from polybar_clockify.settings import EMAIL, UNIX_HOST, UNIX_PORT
+from polybar_clockify.utils import deltatime_to_hours_minutes_seconds, print_flush
 
 TIME_ENTRY_STARTED = 'TIME_ENTRY_STARTED'
 TIME_ENTRY_STOPPED = 'TIME_ENTRY_STOPPED'
@@ -23,6 +24,8 @@ TIME_ENTRY_DELETED = 'TIME_ENTRY_DELETED'
 
 COMMAND_TOGGLE_HIDE = 'TOGGLE_HIDE'
 COMMAND_TOGGLE_TIMER = 'TOGGLE_TIMER'
+COMMAND_NEXT_MODE = 'NEXT_MODE'
+COMMAND_PREVIOUS_MODE = 'PREVIOUS_MODE'
 
 loop = asyncio.get_event_loop()
 
@@ -33,14 +36,32 @@ class WebsocketStatus(Enum):
     CLOSED = 3
 
 
+class Modes(Enum):
+    OVERVIEW_TODAY = 1
+    OVERVIEW_MONTH = 2
+
+    def next(self):
+        next_ = self.value + 1
+        if next_ > len(Modes):
+            return Modes(1)
+        return Modes(next_)
+
+    def previous(self):
+        previous = self.value - 1
+        if previous < 1:
+            return Modes(len(Modes))
+        return Modes(previous)
+
+
 class Clockify:
     def __init__(self):
         self.hidden = False
+        self.mode = Modes.OVERVIEW_TODAY
         self.websocket_status = WebsocketStatus.UNINITIALIZED
         self.user = None
         self.workspace = None
         self.projects = None
-        self.today_time_entries = []
+        self.monthly_time_entries = []
         self.active_project = []
 
     async def initialize(self):
@@ -51,22 +72,26 @@ class Clockify:
             await self.sync()
 
     async def sync(self):
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
+        month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
+        workspace_id = self.workspace['id']
+        user_id = self.user['id']
+
         async with ClientSession() as session:
-            self.today_time_entries = await get_time_entries(
-                session,
-                self.workspace['id'],
-                self.user['id'],
-                {'start': today}
-            )
+            self.monthly_time_entries = await get_time_entries(session, workspace_id, user_id,
+                                                               {'start': month, 'page-size': 200})
             self.active_project = self.projects[(await self.get_last_time_entry())['projectId']]
 
     async def get_last_time_entry(self) -> Dict:
-        if self.today_time_entries:
-            return self.today_time_entries[0]
+        if self.monthly_time_entries:
+            return self.monthly_time_entries[0]
 
         async with ClientSession() as session:
             return (await get_time_entries(session, self.workspace['id'], self.user['id']))[0]
+
+    @property
+    def today_time_entries(self):
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
+        return [entry for entry in self.monthly_time_entries if entry['timeInterval']['start'] > today]
 
     @property
     def hourly_rate(self):
@@ -79,14 +104,16 @@ class Clockify:
     @property
     def money_earned(self):
         return Decimal(
-            self.hourly_rate * Decimal(self.time_spent_working_today / timedelta(hours=1))
+            self.hourly_rate * Decimal(self.time_spent_working / timedelta(hours=1))
         ).quantize(Decimal('.01'))
 
     @property
-    def time_spent_working_today(self):
+    def time_spent_working(self):
         # Splits the time entries into finished entries and an active entry
+        entries = self.today_time_entries if self.mode == Modes.OVERVIEW_TODAY else self.monthly_time_entries
+
         finished, active = [], []
-        for entry in self.today_time_entries:
+        for entry in entries:
             (finished, active)[entry['timeInterval']['duration'] is None].append(entry)
 
         # Calculates the active time entry duration
@@ -112,7 +139,7 @@ class Clockify:
 
         async with ClientSession() as session:
             if last_entry['timeInterval']['duration'] is None:
-                time_entry = self.today_time_entries[0]
+                time_entry = self.monthly_time_entries[0]
                 start = datetime.strptime(time_entry['timeInterval']['start'], '%Y-%m-%dT%H:%M:%S%z')
                 difference = now - start.replace(tzinfo=None)
                 time_entry['timeInterval']['end'] = now
@@ -124,7 +151,7 @@ class Clockify:
                 time_entry['timeInterval']['start'] = now_str
                 time_entry['timeInterval']['end'] = None
                 time_entry['timeInterval']['duration'] = None
-                self.today_time_entries.insert(0, time_entry)
+                self.monthly_time_entries.insert(0, time_entry)
 
                 await post_time_entry(session, self.workspace['id'], {
                     'start': now_str,
@@ -150,11 +177,7 @@ class Clockify:
                     loop.create_task(self.websocket_connect())  # Restart the connection
                     break
 
-                if response == TIME_ENTRY_STARTED:
-                    loop.create_task(self.sync())
-                elif response == TIME_ENTRY_STOPPED:
-                    loop.create_task(self.sync())
-                elif response == TIME_ENTRY_DELETED:
+                if response in (TIME_ENTRY_STARTED, TIME_ENTRY_STOPPED, TIME_ENTRY_DELETED):
                     loop.create_task(self.sync())
 
     async def websocket_auto_reconnect(self):
@@ -187,6 +210,10 @@ class Clockify:
                 await self.toggle_timer()
             elif message == COMMAND_TOGGLE_HIDE:
                 self.hidden = not self.hidden
+            elif message == COMMAND_NEXT_MODE:
+                self.mode = self.mode.next()
+            elif message == COMMAND_PREVIOUS_MODE:
+                self.mode = self.mode.previous()
             else:
                 print_flush('Unknown command')
                 await loop.sock_sendall(client, b'Unknown command')
@@ -200,14 +227,8 @@ class Clockify:
                 continue
 
             ws_closed = '(no connection) ' if self.websocket_status == WebsocketStatus.CLOSED else ''
-            working_time = self.time_spent_working_today
-            working_time -= timedelta(microseconds=working_time.microseconds)
-
+            working_time = deltatime_to_hours_minutes_seconds(self.time_spent_working)
             print_flush(f'{ws_closed}{self.money_earned} {self.currency} - {working_time}')
-
-
-def print_flush(*args, **kwargs):
-    print(*args, **kwargs, flush=True)
 
 
 def run():
