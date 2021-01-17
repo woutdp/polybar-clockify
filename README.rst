@@ -4,8 +4,11 @@
 ================
 polybar-clockify
 ================
-
 .. image:: https://raw.githubusercontent.com/woutdp/polybar-clockify/master/demo/demo.gif
+.. contents::
+
+Introduction
+------------
 
 Control Clockify through Polybar.
 
@@ -26,7 +29,7 @@ Installation
 
 
 Configuration
--------------
+_____________
 Create credentials file in ``~/.config/polybar/clockify/credentials.json`` and fill out your clockify credentials.
 Your will have to create a `clockify API key <https://clockify.me/user/settings/>`_ to make the module work. ::
 
@@ -66,6 +69,6 @@ To run in the terminal ::
 
 
 Contribution
-------------
+____________
 At the moment the functionality is pretty basic, but sufficient for my use case.
 If you want to extend the functionality I'd be delighted to accept pull requests!
