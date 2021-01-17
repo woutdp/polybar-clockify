@@ -1,10 +1,14 @@
-================
-polybar-clockify
-================
 .. image:: https://badge.fury.io/py/polybar-clockify.svg
     :target: https://badge.fury.io/py/polybar-clockify
 
+================
+polybar-clockify
+================
+
+.. image:: https://raw.githubusercontent.com/woutdp/polybar-clockify/master/demo/demo.gif
+
 Control Clockify through Polybar.
+
 
 Features:
 
