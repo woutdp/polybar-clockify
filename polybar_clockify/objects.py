@@ -4,7 +4,7 @@ from typing import Optional
 
 import isodate
 import marshmallow
-from dataclasses_json import dataclass_json, LetterCase, Undefined, config
+from dataclasses_json import dataclass_json, LetterCase, Undefined, config, CatchAll
 
 isodatetime_config = config(
     encoder=lambda value: datetime.isoformat(value) if isinstance(value, datetime) else None,
@@ -27,6 +27,13 @@ class TimeInterval:
     end: Optional[datetime] = field(metadata=isodatetime_config)
 
 
+@dataclass_json
+@dataclass
+class HourlyRate:
+    amount: int
+    currency: str
+
+
 @dataclass_json(letter_case=LetterCase.CAMEL, undefined=Undefined.EXCLUDE)
 @dataclass
 class TimeEntry:
@@ -45,17 +52,11 @@ class User:
     id: str
 
 
-@dataclass_json(undefined=Undefined.EXCLUDE)
+@dataclass_json(letter_case=LetterCase.CAMEL, undefined=Undefined.EXCLUDE)
 @dataclass
 class Workspace:
     id: str
-
-
-@dataclass_json
-@dataclass
-class HourlyRate:
-    amount: int
-    currency: str
+    hourly_rate: Optional[HourlyRate]
 
 
 @dataclass_json(letter_case=LetterCase.CAMEL, undefined=Undefined.EXCLUDE)

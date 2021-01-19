@@ -17,8 +17,8 @@ from polybar_clockify.api import (get_user, get_workspaces, get_projects, get_ti
                                   patch_time_entry, get_auth_token)
 from polybar_clockify.objects import TimeEntry, Project, Workspace, User
 from polybar_clockify.settings import EMAIL, UNIX_HOST, UNIX_PORT
-from polybar_clockify.utils import deltatime_to_hours_minutes_seconds, print_flush, get_now, get_today, get_month, \
-    serialize_datetime, get_week
+from polybar_clockify.utils import (deltatime_to_hours_minutes_seconds, print_flush, get_now, get_today, get_month,
+                                    serialize_datetime, get_week)
 
 TIME_ENTRY_STARTED = 'TIME_ENTRY_STARTED'
 TIME_ENTRY_STOPPED = 'TIME_ENTRY_STOPPED'
@@ -72,7 +72,6 @@ class Clockify:
         async with ClientSession() as session:
             self.user = await get_user(session)
             self.workspace = (await get_workspaces(session))[0]
-            self.projects = {project.id: project for project in await get_projects(session, self.workspace.id)}
             await self.sync()
 
     async def sync(self):
@@ -86,6 +85,7 @@ class Clockify:
                     'page-size': 200
                 }
             )
+            self.projects = {project.id: project for project in await get_projects(session, self.workspace.id)}
             self.active_project = self.projects[(await self.get_last_time_entry()).project_id]
 
     async def get_last_time_entry(self) -> TimeEntry:
@@ -104,21 +104,21 @@ class Clockify:
         return [entry for entry in self.monthly_time_entries if entry.time_interval.start > get_week()]
 
     @property
-    def hourly_rate(self):
-        return Decimal(self.active_project.hourly_rate.amount) / 100
-
-    @property
     def currency(self):
         return self.active_project.hourly_rate.currency
 
-    @property
-    def amount_earned(self):
-        return Decimal(
-            self.hourly_rate * Decimal(self.time_spent_working / timedelta(hours=1))
+    def amount_earned(self, time_entries):
+        def _hourly_rate(project_id):
+            amount = self.projects[project_id].hourly_rate.amount or self.workspace.hourly_rate.amount
+            return Decimal(amount / 100)
+
+        return sum(
+            Decimal(_hourly_rate(entry.project_id) * Decimal(entry.time_interval.duration / timedelta(hours=1)))
+            for entry
+            in time_entries
         ).quantize(Decimal('.01'))
 
-    @property
-    def time_spent_working(self):
+    def time_adjusted_time_entries(self):
         if self.mode == Modes.OVERVIEW_TODAY:
             time_entries = self.today_time_entries
         elif self.mode == Modes.OVERVIEW_WEEK:
@@ -128,14 +128,17 @@ class Clockify:
 
         finished, active = [], []
         for entry in time_entries:
-            (finished, active)[entry.time_interval.duration is None].append(entry)
+            (finished, active)[entry.time_interval.duration is None].append(deepcopy(entry))
 
-        finished_total = sum((entry.time_interval.duration for entry in finished), start=timedelta(0))
-        active_total = timedelta(0)
         if active:
-            active_total = get_now(get_microseconds=True) - active[0].time_interval.start
+            active[0].time_interval.duration = get_now(get_microseconds=True) - active[0].time_interval.start
 
-        return finished_total + active_total
+        return finished + active
+
+    def working_time(self, time_entries):
+        return deltatime_to_hours_minutes_seconds(
+            sum((entry.time_interval.duration for entry in time_entries), start=timedelta(0))
+        )
 
     async def toggle_timer(self):
         now = datetime.now(pytz.utc).replace(microsecond=0)
@@ -225,15 +228,16 @@ class Clockify:
 
     async def output(self):
         while True:
-            await sleep(0.1)
+            await sleep(0.2)
 
             if self.hidden:
                 print_flush('%{F#555}<hidden>%{F-}')
                 continue
 
+            time_entries = self.time_adjusted_time_entries()
             ws_closed = '(no connection) ' if self.websocket_status == WebsocketStatus.CLOSED else ''
-            working_time = deltatime_to_hours_minutes_seconds(self.time_spent_working)
-            print_flush(f'{ws_closed}{self.amount_earned} {self.currency} - {working_time}')
+            print_flush(f'{ws_closed}'
+                        f'{self.amount_earned(time_entries)} {self.currency} - {self.working_time(time_entries)}')
 
 
 def run():
