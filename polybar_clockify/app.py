@@ -23,6 +23,7 @@ from polybar_clockify.utils import deltatime_to_hours_minutes_seconds, print_flu
 TIME_ENTRY_STARTED = 'TIME_ENTRY_STARTED'
 TIME_ENTRY_STOPPED = 'TIME_ENTRY_STOPPED'
 TIME_ENTRY_DELETED = 'TIME_ENTRY_DELETED'
+TIME_ENTRY_UPDATED = 'TIME_ENTRY_UPDATED'
 
 COMMAND_TOGGLE_HIDE = 'TOGGLE_HIDE'
 COMMAND_TOGGLE_TIMER = 'TOGGLE_TIMER'
@@ -181,7 +182,7 @@ class Clockify:
                     loop.create_task(self.websocket_connect())  # Restart the connection
                     break
 
-                if response in (TIME_ENTRY_STARTED, TIME_ENTRY_STOPPED, TIME_ENTRY_DELETED):
+                if response in (TIME_ENTRY_STARTED, TIME_ENTRY_STOPPED, TIME_ENTRY_DELETED, TIME_ENTRY_UPDATED):
                     loop.create_task(self.sync())
 
     async def websocket_auto_reconnect(self):
