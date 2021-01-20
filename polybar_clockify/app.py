@@ -113,9 +113,12 @@ class Clockify:
             return Decimal(amount / 100)
 
         return sum(
-            Decimal(_hourly_rate(entry.project_id) * Decimal(entry.time_interval.duration / timedelta(hours=1)))
-            for entry
-            in time_entries
+            (
+                Decimal(_hourly_rate(entry.project_id) * Decimal(entry.time_interval.duration / timedelta(hours=1)))
+                for entry
+                in time_entries
+            ),
+            start=Decimal(0)
         ).quantize(Decimal('.01'))
 
     def time_adjusted_time_entries(self):
