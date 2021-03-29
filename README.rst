@@ -1,11 +1,10 @@
+polybar-clockify
+================
 .. image:: https://badge.fury.io/py/polybar-clockify.svg
     :target: https://badge.fury.io/py/polybar-clockify
 
-================
-polybar-clockify
-================
-.. image:: https://raw.githubusercontent.com/woutdp/polybar-clockify/master/demo/demo.gif
-.. contents::
+.. contents:: Table of Contents
+
 
 Introduction
 ------------
@@ -20,6 +19,7 @@ Features:
 - Daily, weekly and monthly view
 - Hide output for privacy
 
+.. image:: https://raw.githubusercontent.com/woutdp/polybar-clockify/master/demo/demo.gif
 
 Installation
 ------------
@@ -27,9 +27,8 @@ Installation
 
     pip install polybar-clockify
 
-
 Configuration
-_____________
+-------------
 Create credentials file in ``~/.config/polybar/clockify/credentials.json`` and fill out your clockify credentials.
 You will have to create a `clockify API key <https://clockify.me/user/settings/>`_ to make the module work. ::
 
@@ -69,6 +68,6 @@ To run in the terminal ::
 
 
 Contribution
-____________
+------------
 At the moment the functionality is pretty basic, but sufficient for my use case.
 If you want to extend the functionality I'd be delighted to accept pull requests!
